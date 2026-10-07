@@ -10,7 +10,7 @@
 <!--
 =====================  SUPABASE SQL  =====================
 
--- NEW SETUP (if you have not created the table yet):
+-- 1) Main table (skip if already created):
 
 create table if not exists expenses (
   id bigint generated always as identity primary key,
@@ -23,17 +23,24 @@ alter table expenses enable row level security;
 create policy "anon full access" on expenses
   for all to anon using (true) with check (true);
 
--- ALREADY CREATED THE TABLE? Run only this:
+-- 2) NEW: table for extra (product) expenses - run this:
 
-alter table expenses drop constraint if exists expenses_period_check;
-alter table expenses add constraint expenses_period_check
-  check (period in ('morning','afternoon','night','daily'));
+create table if not exists extra_expenses (
+  id bigint generated always as identity primary key,
+  date date not null,
+  product text,
+  amount numeric not null,
+  created_at timestamptz default now()
+);
+alter table extra_expenses enable row level security;
+create policy "anon full access extra" on extra_expenses
+  for all to anon using (true) with check (true);
 
 ==========================================================
 -->
 
 <style>
-:root{--bg:#f4f5f9;--card:#fff;--text:#1d2030;--muted:#7a8096;--accent:#5b5ef4;--line:#e6e8f0;
+:root{--bg:#f4f5f9;--card:#fff;--text:#1d2030;--muted:#7a8096;--accent:#5b5ef4;--line:#e6e8f0;--danger:#e5484d;
   --c-morning:#f5a524;--c-afternoon:#5b5ef4;--c-night:#8b5cf6;--c-daily:#10b981}
 @media (prefers-color-scheme:dark){:root{--bg:#12141c;--card:#1c1f2b;--text:#eef0f7;--muted:#8d93aa;--line:#2b2f3f}}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -43,20 +50,35 @@ body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg
 main{max-width:520px;margin:0 auto;padding:20px 16px calc(90px + env(safe-area-inset-bottom,0px))}
 .page{display:none}.page.active{display:block}
 h1{margin:0;font-size:1.5rem}
+h3{margin:0 0 10px;font-size:1rem}
 .sub{margin:4px 0 18px;color:var(--muted);font-size:.95rem}
 .card{background:var(--card);border-radius:18px;padding:16px;margin-bottom:14px;box-shadow:0 2px 12px rgba(0,0,0,.06)}
 .date-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;color:var(--muted)}
-input{font:inherit;font-size:16px;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:12px}
+input{font:inherit;font-size:16px;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:12px;min-width:0}
 input:focus{outline:2px solid var(--accent)}
 .slot{display:flex;justify-content:space-between;align-items:center;margin:10px 0;font-size:1.05rem}
 .slot input{width:140px;text-align:right}
-.slot.extra{border-top:1px dashed var(--line);padding-top:14px;margin-top:14px}
 .total,.month{display:flex;justify-content:space-between;align-items:center;margin:16px 0 12px;color:var(--muted)}
 .total strong,.month strong{color:var(--text);font-size:1.3rem}
 .month{margin:0}
 button.save{width:100%;padding:15px;border:0;border-radius:14px;background:var(--accent);color:#fff;font:inherit;font-size:1.05rem;font-weight:600}
 button:disabled{opacity:.6}
-#msg{min-height:1.2em;text-align:center;font-size:.9rem;color:var(--muted);margin:10px 0 0}
+#msg,#emsg{min-height:1.2em;text-align:center;font-size:.9rem;color:var(--muted);margin:10px 0 0}
+
+/* extra expenses */
+.add-extra{display:flex;gap:8px}
+.add-extra input:first-child{flex:1}
+.add-extra input:nth-child(2){width:96px;text-align:right}
+.add-extra button{border:0;background:var(--c-daily);color:#fff;border-radius:12px;padding:0 16px;font-size:1.4rem;font-weight:600}
+.items{margin-top:10px}
+.item{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.item .name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .amt{font-weight:600}
+.item .del{border:0;background:none;color:var(--danger);font-size:1.1rem;padding:4px 6px}
+.item.old .name{color:var(--muted)}
+.etotal{display:flex;justify-content:space-between;padding-top:10px;border-top:1px solid var(--line);color:var(--muted)}
+.etotal strong{color:var(--text)}
+.empty{color:var(--muted);font-size:.9rem;margin:8px 0 0}
 
 /* graph page */
 .seg{display:flex;background:var(--card);border-radius:12px;padding:4px;margin-bottom:14px;box-shadow:0 2px 12px rgba(0,0,0,.06)}
@@ -71,7 +93,7 @@ svg text{fill:var(--muted);font-size:9px;font-family:inherit}
 svg .grid{stroke:var(--line);stroke-width:1}
 .legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.82rem;color:var(--muted);margin-top:10px}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
-.detail{font-size:.9rem;color:var(--muted);min-height:2.6em;margin-top:10px}
+.detail{font-size:.9rem;color:var(--muted);min-height:2.6em;margin-top:10px;line-height:1.5}
 .detail b{color:var(--text)}
 
 /* bottom nav */
@@ -88,7 +110,7 @@ nav button.on{color:var(--accent);font-weight:600}
   <!-- PAGE 1: ADD -->
   <section class="page active" id="pageAdd">
     <h1>Expense Tracker</h1>
-    <p class="sub">Morning · Afternoon · Night · Daily</p>
+    <p class="sub">Morning · Afternoon · Night · Extra</p>
 
     <div class="card">
       <label class="date-row">Date
@@ -98,14 +120,27 @@ nav button.on{color:var(--accent);font-weight:600}
       <div class="slot"><span>🌅 Morning</span><input type="number" id="morning" placeholder="0" min="0" step="any" inputmode="decimal"></div>
       <div class="slot"><span>☀️ Afternoon</span><input type="number" id="afternoon" placeholder="0" min="0" step="any" inputmode="decimal"></div>
       <div class="slot"><span>🌙 Night</span><input type="number" id="night" placeholder="0" min="0" step="any" inputmode="decimal"></div>
-      <div class="slot extra"><span>📅 Daily (extra)</span><input type="number" id="daily" placeholder="0" min="0" step="any" inputmode="decimal"></div>
 
-      <div class="total">Day total <strong id="dayTotal">0</strong></div>
       <button class="save" id="save">Save</button>
       <p id="msg"></p>
     </div>
 
-    <div class="card month">This month <strong id="monthTotal">0</strong></div>
+    <div class="card">
+      <h3>📅 Daily extra</h3>
+      <div class="add-extra">
+        <input type="text" id="eProduct" placeholder="Product (optional)" maxlength="60">
+        <input type="number" id="eAmount" placeholder="0" min="0" step="any" inputmode="decimal">
+        <button id="eAdd" aria-label="Add extra expense">+</button>
+      </div>
+      <p id="emsg"></p>
+      <div class="items" id="items"></div>
+      <div class="etotal">Extra total <strong id="extraTotal">0</strong></div>
+    </div>
+
+    <div class="card">
+      <div class="month" style="margin:0 0 10px">Day total <strong id="dayTotal">0</strong></div>
+      <div class="month">This month <strong id="monthTotal">0</strong></div>
+    </div>
   </section>
 
   <!-- PAGE 2: GRAPH -->
@@ -130,7 +165,7 @@ nav button.on{color:var(--accent);font-weight:600}
         <span><i style="background:var(--c-morning)"></i>Morning</span>
         <span><i style="background:var(--c-afternoon)"></i>Afternoon</span>
         <span><i style="background:var(--c-night)"></i>Night</span>
-        <span><i style="background:var(--c-daily)"></i>Daily</span>
+        <span><i style="background:var(--c-daily)"></i>Extra</span>
       </div>
       <div class="detail" id="detail">No day selected.</div>
     </div>
@@ -150,8 +185,10 @@ const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 // ======================================================
 
 const TABLE = "expenses";
-const PERIODS = ["morning", "afternoon", "night", "daily"];
-const LABELS = { morning: "Morning", afternoon: "Afternoon", night: "Night", daily: "Daily" };
+const EXTRA = "extra_expenses";
+const SLOTS = ["morning", "afternoon", "night"];       // typed once per day
+const STACK = ["morning", "afternoon", "night", "daily"]; // graph stack (daily = extras)
+const LABELS = { morning: "Morning", afternoon: "Afternoon", night: "Night", daily: "Extra" };
 const $ = id => document.getElementById(id);
 const headers = {
   apikey: SUPABASE_KEY,
@@ -162,35 +199,74 @@ const fmt = n => Number(n || 0).toLocaleString(undefined, { maximumFractionDigit
 const short = n => n >= 1000 ? (n / 1000).toFixed(n % 1000 ? 1 : 0) + "k" : String(Math.round(n));
 const dstr = d => d.toLocaleDateString("en-CA");
 const today = () => dstr(new Date());
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-let rows = [];
+let rows = [];    // morning / afternoon / night (and any old 'daily' rows)
+let extras = [];  // extra_expenses rows
 let range = 7;
 
 function setMsg(t, err) { $("msg").textContent = t; $("msg").style.color = err ? "#e5484d" : ""; }
+function setEMsg(t, err) { $("emsg").textContent = t; $("emsg").style.color = err ? "#e5484d" : ""; }
+
+/* ---------- helpers ---------- */
+const legacyDaily = d => rows.filter(r => r.date === d && r.period === "daily").reduce((s, r) => s + Number(r.amount), 0);
+const extraItems = d => extras.filter(e => e.date === d);
+const extraSum = d => extraItems(d).reduce((s, e) => s + Number(e.amount), 0) + legacyDaily(d);
+const slotSum = d => rows.filter(r => r.date === d && SLOTS.includes(r.period)).reduce((s, r) => s + Number(r.amount), 0);
 
 function updateDayTotal() {
-  $("dayTotal").textContent = fmt(PERIODS.reduce((s, p) => s + (parseFloat($(p).value) || 0), 0));
+  const typed = SLOTS.reduce((s, p) => s + (parseFloat($(p).value) || 0), 0);
+  $("dayTotal").textContent = fmt(typed + extraSum($("date").value));
 }
 
 function fillInputs() {
   const d = $("date").value;
-  PERIODS.forEach(p => {
+  SLOTS.forEach(p => {
     const r = rows.find(x => x.date === d && x.period === p);
     $(p).value = r ? r.amount : "";
   });
+  renderExtras();
   updateDayTotal();
+}
+
+function renderExtras() {
+  const d = $("date").value;
+  const items = extraItems(d);
+  const old = legacyDaily(d);
+  let html = items.map(e => `
+    <div class="item">
+      <span class="name">${esc(e.product || "Extra")}</span>
+      <span class="amt">${fmt(e.amount)}</span>
+      <button class="del" data-id="${e.id}" aria-label="Delete">✕</button>
+    </div>`).join("");
+  if (old) html += `<div class="item old"><span class="name">Earlier daily entry</span><span class="amt">${fmt(old)}</span></div>`;
+  $("items").innerHTML = html || '<p class="empty">No extra expenses for this day yet.</p>';
+  $("extraTotal").textContent = fmt(extraSum(d));
+}
+
+function updateMonth() {
+  const month = today().slice(0, 7);
+  const dates = new Set([...rows, ...extras].map(r => r.date).filter(d => d.startsWith(month)));
+  let t = 0;
+  dates.forEach(d => { t += slotSum(d) + extraSum(d); });
+  $("monthTotal").textContent = fmt(t);
+}
+
+/* ---------- Supabase ---------- */
+async function get(table, order) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=*&order=${order}&limit=2000`, { headers });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
 }
 
 async function load() {
   try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?select=*&order=date.desc&limit=1000`, { headers });
-    if (!res.ok) throw new Error(await res.text());
-    rows = await res.json();
+    [rows, extras] = await Promise.all([get(TABLE, "date.desc"), get(EXTRA, "id.asc")]);
     fillInputs();
     updateMonth();
     drawGraph();
   } catch (e) {
-    setMsg("Could not load data. Check your Supabase URL/key.", true);
+    setMsg("Could not load data. Did you run the SQL for extra_expenses?", true);
     console.error(e);
   }
 }
@@ -198,7 +274,7 @@ async function load() {
 async function save() {
   const d = $("date").value;
   if (!d) return setMsg("Pick a date", true);
-  const payload = PERIODS
+  const payload = SLOTS
     .filter(p => $(p).value !== "")
     .map(p => ({ date: d, period: p, amount: parseFloat($(p).value) }));
   if (!payload.length) return setMsg("Enter at least one amount", true);
@@ -222,11 +298,43 @@ async function save() {
   }
 }
 
-function updateMonth() {
-  const month = today().slice(0, 7);
-  $("monthTotal").textContent = fmt(
-    rows.filter(r => r.date.startsWith(month)).reduce((s, r) => s + Number(r.amount), 0)
-  );
+async function addExtra() {
+  const d = $("date").value;
+  const amount = parseFloat($("eAmount").value);
+  if (!d) return setEMsg("Pick a date", true);
+  if (!(amount > 0)) return setEMsg("Enter an amount", true);
+
+  $("eAdd").disabled = true;
+  setEMsg("Adding…");
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${EXTRA}`, {
+      method: "POST",
+      headers: { ...headers, Prefer: "return=minimal" },
+      body: JSON.stringify({ date: d, product: $("eProduct").value.trim() || null, amount })
+    });
+    if (!res.ok) throw new Error(await res.text());
+    $("eProduct").value = "";
+    $("eAmount").value = "";
+    await load();
+    setEMsg("Added ✓");
+  } catch (e) {
+    setEMsg("Could not add. Run the extra_expenses SQL first.", true);
+    console.error(e);
+  } finally {
+    $("eAdd").disabled = false;
+  }
+}
+
+async function deleteExtra(id) {
+  if (!confirm("Delete this expense?")) return;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${EXTRA}?id=eq.${id}`, { method: "DELETE", headers });
+    if (!res.ok) throw new Error(await res.text());
+    await load();
+  } catch (e) {
+    setEMsg("Delete failed.", true);
+    console.error(e);
+  }
 }
 
 /* ---------- GRAPH ---------- */
@@ -238,11 +346,16 @@ function lastDays(n) {
   return out;
 }
 
+function dayValues(d) {
+  const o = { morning: 0, afternoon: 0, night: 0, daily: extraSum(d) };
+  rows.filter(r => r.date === d && SLOTS.includes(r.period)).forEach(r => o[r.period] = Number(r.amount));
+  return o;
+}
+
 function drawGraph() {
   const days = lastDays(range);
-  const byDate = {};
-  rows.forEach(r => (byDate[r.date] ||= {})[r.period] = Number(r.amount));
-  const totals = days.map(d => PERIODS.reduce((s, p) => s + ((byDate[d] || {})[p] || 0), 0));
+  const vals = days.map(dayValues);
+  const totals = vals.map(o => STACK.reduce((s, p) => s + o[p], 0));
   const sum = totals.reduce((a, b) => a + b, 0);
   $("gTotal").textContent = fmt(sum);
   $("gAvg").textContent = fmt(sum / days.length);
@@ -266,8 +379,8 @@ function drawGraph() {
   days.forEach((d, i) => {
     const x = pl + i * bw + (bw - barW) / 2;
     let acc = 0;
-    PERIODS.forEach(p => {
-      const v = (byDate[d] || {})[p] || 0;
+    STACK.forEach(p => {
+      const v = vals[i][p];
       if (!v) return;
       const h = v / niceMax * ph;
       const y = pt + ph - (acc / niceMax * ph) - h;
@@ -285,18 +398,25 @@ function drawGraph() {
 }
 
 function showDetail(d) {
-  const o = {};
-  rows.filter(r => r.date === d).forEach(r => o[r.period] = Number(r.amount));
-  const total = PERIODS.reduce((s, p) => s + (o[p] || 0), 0);
+  const o = dayValues(d);
+  const total = STACK.reduce((s, p) => s + o[p], 0);
+  const items = extraItems(d).map(e => `${esc(e.product || "Extra")} ${fmt(e.amount)}`).join(", ");
   $("detail").innerHTML = `<b>${d}</b> · Total <b>${fmt(total)}</b><br>` +
-    PERIODS.map(p => `${LABELS[p]} ${fmt(o[p])}`).join(" · ");
+    STACK.map(p => `${LABELS[p]} ${fmt(o[p])}`).join(" · ") +
+    (items ? `<br>Extra items: ${items}` : "");
 }
 
 /* ---------- EVENTS ---------- */
 $("date").value = today();
 $("date").addEventListener("change", fillInputs);
-PERIODS.forEach(p => $(p).addEventListener("input", updateDayTotal));
+SLOTS.forEach(p => $(p).addEventListener("input", updateDayTotal));
 $("save").addEventListener("click", save);
+$("eAdd").addEventListener("click", addExtra);
+$("eAmount").addEventListener("keydown", e => { if (e.key === "Enter") addExtra(); });
+$("items").addEventListener("click", e => {
+  const b = e.target.closest(".del");
+  if (b) deleteExtra(b.dataset.id);
+});
 
 $("chart").addEventListener("click", e => {
   const t = e.target.closest("[data-date]");
