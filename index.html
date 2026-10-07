@@ -6,22 +6,28 @@
 <title>Daily Expense Tracker</title>
 
 <!--
-=====================  SUPABASE SQL (run once in SQL Editor)  =====================
+=====================  SUPABASE SQL  =====================
+
+-- NEW SETUP (if you have not created the table yet):
 
 create table if not exists expenses (
   id bigint generated always as identity primary key,
   date date not null,
-  period text not null check (period in ('morning','afternoon','night')),
+  period text not null check (period in ('morning','afternoon','night','daily')),
   amount numeric not null default 0,
   unique (date, period)
 );
-
 alter table expenses enable row level security;
-
 create policy "anon full access" on expenses
   for all to anon using (true) with check (true);
 
-====================================================================================
+-- ALREADY CREATED THE TABLE? Run only this to allow the new "daily" slot:
+
+alter table expenses drop constraint if exists expenses_period_check;
+alter table expenses add constraint expenses_period_check
+  check (period in ('morning','afternoon','night','daily'));
+
+==========================================================
 -->
 
 <style>
@@ -38,6 +44,7 @@ h2{font-size:1rem;margin:12px 0 8px}
 input{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
 .slot{display:flex;justify-content:space-between;align-items:center;margin:10px 0}
 .slot input{width:130px;text-align:right}
+.slot.extra{border-top:1px dashed var(--line);padding-top:12px;margin-top:14px}
 input:focus{outline:2px solid var(--accent)}
 .total,.month{display:flex;justify-content:space-between;margin:16px 0 12px;color:var(--muted)}
 .total strong,.month strong{color:var(--text);font-size:1.2rem}
@@ -53,7 +60,7 @@ button:disabled{opacity:.6}
 <body>
 <main>
   <h1>Expense Tracker</h1>
-  <p class="sub">Morning · Afternoon · Night</p>
+  <p class="sub">Morning · Afternoon · Night · Daily</p>
 
   <section class="card">
     <label class="date-row">Date
@@ -63,6 +70,7 @@ button:disabled{opacity:.6}
     <div class="slot"><span>🌅 Morning</span><input type="number" id="morning" placeholder="0" min="0" step="any" inputmode="decimal"></div>
     <div class="slot"><span>☀️ Afternoon</span><input type="number" id="afternoon" placeholder="0" min="0" step="any" inputmode="decimal"></div>
     <div class="slot"><span>🌙 Night</span><input type="number" id="night" placeholder="0" min="0" step="any" inputmode="decimal"></div>
+    <div class="slot extra"><span>📅 Daily (extra)</span><input type="number" id="daily" placeholder="0" min="0" step="any" inputmode="decimal"></div>
 
     <div class="total">Day total <strong id="dayTotal">0</strong></div>
     <button id="save">Save</button>
@@ -83,7 +91,7 @@ const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 // ======================================================
 
 const TABLE = "expenses";
-const PERIODS = ["morning", "afternoon", "night"];
+const PERIODS = ["morning", "afternoon", "night", "daily"];
 const $ = id => document.getElementById(id);
 const headers = {
   apikey: SUPABASE_KEY,
@@ -164,7 +172,7 @@ function render() {
     const total = PERIODS.reduce((s, p) => s + (o[p] || 0), 0);
     return `<div class="day" data-date="${d}">
       <div class="day-head"><span>${d}</span><span>${fmt(total)}</span></div>
-      <div class="day-detail">Morning ${fmt(o.morning)} · Afternoon ${fmt(o.afternoon)} · Night ${fmt(o.night)}</div>
+      <div class="day-detail">Morning ${fmt(o.morning)} · Afternoon ${fmt(o.afternoon)} · Night ${fmt(o.night)} · Daily ${fmt(o.daily)}</div>
     </div>`;
   }).join("") : '<p class="empty">No entries yet.</p>';
 }
